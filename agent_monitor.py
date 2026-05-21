@@ -117,40 +117,56 @@ def context_bar(pct: int, width: int = 20) -> str:
 
 
 def scan_agents() -> list[dict]:
-    """Find all running opencode agent processes."""
+    """Find all running opencode agent processes, capturing PPID for tree display."""
     agents = []
     try:
         result = subprocess.run(
-            ["ps", "aux"],
+            ["ps", "-eo", "pid,ppid,pcpu,pmem,rss,lstart,etime,args"],
             capture_output=True, text=True, timeout=5,
         )
-        for line in result.stdout.splitlines():
-            if "opencode run --agent" not in line:
+        # Build PID → agent map first (all processes, not just opencode)
+        # so we can resolve parent roles later
+        all_pids: dict[int, dict] = {}
+        for line in result.stdout.splitlines()[1:]:  # skip header
+            parts = line.split(None, 6)
+            if len(parts) < 7:
                 continue
-            # Extract agent name
-            m = re.search(r"--agent\s+(\S+)", line)
+            pid = int(parts[0])
+            ppid = int(parts[1])
+            all_pids[pid] = {"ppid": ppid}
+
+        for line in result.stdout.splitlines()[1:]:
+            parts = line.split(None, 6)
+            if len(parts) < 7:
+                continue
+            cmd = parts[6]
+            if "opencode run --agent" not in cmd:
+                continue
+
+            m = re.search(r"--agent\s+(\S+)", cmd)
             if not m:
                 continue
             agent_name = m.group(1)
             role = ROLE_MAP.get(agent_name, agent_name)
 
-            # Extract PID, CPU, MEM, RSS, start time, elapsed
-            parts = line.split(None, 10)
-            if len(parts) < 11:
-                continue
-            pid     = int(parts[1])
+            pid     = int(parts[0])
+            ppid    = int(parts[1])
             cpu     = float(parts[2])
             mem     = float(parts[3])
-            rss_kb  = int(parts[5])
-            start   = parts[8]
-            elapsed = parts[9]
+            rss_kb  = int(parts[4])
 
-            # Extract task prompt (after the last \012\012## Your task)
-            cmd = parts[10] if len(parts) > 10 else ""
+            # lstart is "Day Mon DD HH:MM:SS YYYY" (5 fields), etime is next
+            # Format: "Wed May 21 10:00:00 2026" then elapsed
+            # We'll extract elapsed from the raw line more carefully
+            # ps -eo etime gives format like "DD-HH:MM:SS" or "HH:MM:SS" or "MM:SS"
+            # The lstart takes 5 tokens, so parts[5] is start date (partial)
+            # Actually lstart includes spaces, so split(None, 6) puts it in parts[5]
+            # and cmd in parts[6]. etime is missing — let's use a different approach.
+            elapsed = _extract_elapsed(line)
+
             task = ""
             if "## Your task" in cmd:
                 task = cmd.split("## Your task")[-1].strip()
-                # Decode \012 as newlines, then truncate
                 task = task.replace("\\012", "\n").strip()
                 if len(task) > 200:
                     task = task[:200] + "..."
@@ -158,14 +174,32 @@ def scan_agents() -> list[dict]:
             model_name, ctx_limit = MODEL_CONTEXT.get(agent_name, ("unknown", 128_000))
             ctx_label, ctx_color, ctx_pct = estimate_context_pressure(round(rss_kb / 1024, 1))
 
+            # Determine if this is a sub-agent
+            parent_info = all_pids.get(ppid, {})
+            parent_pid = ppid
+            is_subagent = False
+            parent_role = None
+            # Check if parent is also an opencode agent
+            parent_cmd = None
+            for pline in result.stdout.splitlines()[1:]:
+                pparts = pline.split(None, 6)
+                if len(pparts) >= 1 and int(pparts[0]) == ppid:
+                    parent_cmd = pparts[6] if len(pparts) > 6 else ""
+                    break
+            if parent_cmd and "opencode run --agent" in parent_cmd:
+                is_subagent = True
+                pm = re.search(r"--agent\s+(\S+)", parent_cmd)
+                if pm:
+                    parent_role = ROLE_MAP.get(pm.group(1), pm.group(1))
+
             agents.append({
                 "pid":        pid,
+                "ppid":       parent_pid,
                 "role":       role,
                 "agent_name": agent_name,
                 "cpu":        cpu,
                 "mem":        mem,
                 "rss_mb":     round(rss_kb / 1024, 1),
-                "start":      start,
                 "elapsed":    elapsed,
                 "task":       task,
                 "model":      model_name,
@@ -173,10 +207,30 @@ def scan_agents() -> list[dict]:
                 "ctx_label":  ctx_label,
                 "ctx_color":  ctx_color,
                 "ctx_pct":    ctx_pct,
+                "is_subagent": is_subagent,
+                "parent_role": parent_role,
             })
     except Exception:
         pass
     return agents
+
+
+def _extract_elapsed(ps_line: str) -> str:
+    """Extract elapsed time from ps output line. Returns string like '1:23' or '10:45'."""
+    # ps -eo etime format: [[DD-]HH:]MM:SS
+    # In our combined ps line, we need to find it between rss and args.
+    # The line format is: PID  PPID  %CPU  %MEM   RSS  LSTART(5 tokens)  ELAPSED  COMMAND
+    # But we used split(None, 6) which merges lstart+etime+cmd into parts[5]+parts[6]
+    # Let's re-parse more carefully.
+    parts = ps_line.split()
+    if len(parts) < 10:
+        return "??:??"
+    # parts[0]=PID, [1]=PPID, [2]=%CPU, [3]=%MEM, [4]=RSS
+    # parts[5:10] = lstart (5 tokens: "Wed", "May", "21", "10:00:00", "2026")
+    # parts[10] = elapsed
+    if len(parts) >= 11:
+        return parts[10]
+    return "??:??"
 
 
 # ── Progress log ──────────────────────────────────────────────────────────────
@@ -242,6 +296,58 @@ def list_handoffs() -> list[str]:
 
 # ── Dashboard rendering ───────────────────────────────────────────────────────
 
+def _build_agent_tree(agents: list[dict]) -> list[tuple[dict, str, bool]]:
+    """
+    Build a parent→children tree. Returns list of (agent, prefix, is_last) tuples
+    in display order. Parents come first, children indented underneath.
+    """
+    pid_map = {a["pid"]: a for a in agents}
+    parents = [a for a in agents if not a["is_subagent"]]
+    children_map: dict[int, list[dict]] = {}
+    for a in agents:
+        if a["is_subagent"]:
+            children_map.setdefault(a["ppid"], []).append(a)
+
+    result = []
+    for i, parent in enumerate(parents):
+        is_last_parent = (i == len(parents) - 1)
+        result.append((parent, "", is_last_parent))
+        kids = children_map.get(parent["pid"], [])
+        for j, kid in enumerate(kids):
+            is_last_kid = (j == len(kids) - 1)
+            prefix = "    └── " if is_last_kid else "    ├── "
+            result.append((kid, prefix, is_last_kid))
+    return result
+
+
+def _render_agent_line(a: dict, prefix: str, is_last: bool) -> list[str]:
+    """Render a single agent entry with optional tree prefix."""
+    color = ROLE_COLORS.get(a["role"], C_RESET)
+    status = f"{color}● RUNNING{C_RESET}" if a["cpu"] > 0 else f"{C_DIM}○ IDLE{C_RESET}"
+    ctx_bar_str = context_bar(a["ctx_pct"])
+
+    tag = ""
+    if a["is_subagent"]:
+        tag = f" {C_CYAN}(sub-agent){C_RESET}"
+
+    lines = []
+    lines.append(
+        f"  {prefix}{status}  {C_BOLD}{a['role']}{C_RESET}{tag}  "
+        f"PID:{a['pid']}  CPU:{a['cpu']:.1f}%  MEM:{a['mem']:.1f}%  "
+        f"RSS:{a['rss_mb']}MB  Elapsed:{a['elapsed']}"
+    )
+    info_prefix = "  " + ("    " if prefix else "    ")
+    lines.append(
+        f"{info_prefix}{C_DIM}model:{a['model']}  "
+        f"context:{a['ctx_color']}{ctx_bar_str} {a['ctx_pct']}%{C_RESET}  "
+        f"limit:{a['ctx_limit']:,} tokens"
+    )
+    if a["task"]:
+        task_preview = a["task"].split("\n")[0][:120]
+        lines.append(f"{info_prefix}{C_DIM}→ {task_preview}{C_RESET}")
+    return lines
+
+
 def render_dashboard(agents: list[dict], progress: list[dict],
                      features: list[dict], files: list[str],
                      handoffs: list[str], start_time: float):
@@ -262,26 +368,12 @@ def render_dashboard(agents: list[dict], progress: list[dict],
     lines.append(f"{C_BG_BLUE}{' ' * width}{C_RESET}")
     lines.append("")
 
-    # ── Active agents ───────────────────────────────────────────────────────
+    # ── Active agents (tree view) ───────────────────────────────────────────
     lines.append(f"{C_BOLD}── ACTIVE AGENTS ──────────────────────────────────────────────{C_RESET}")
     if agents:
-        for a in agents:
-            color = ROLE_COLORS.get(a["role"], C_RESET)
-            status = f"{color}● RUNNING{C_RESET}" if a["cpu"] > 0 else f"{C_DIM}○ IDLE{C_RESET}"
-            ctx_bar_str = context_bar(a["ctx_pct"])
-            lines.append(
-                f"  {status}  {C_BOLD}{a['role']}{C_RESET}  PID:{a['pid']}  "
-                f"CPU:{a['cpu']:.1f}%  MEM:{a['mem']:.1f}%  "
-                f"RSS:{a['rss_mb']}MB  Elapsed:{a['elapsed']}"
-            )
-            lines.append(
-                f"  {C_DIM}    model:{a['model']}  "
-                f"context:{a['ctx_color']}{ctx_bar_str} {a['ctx_pct']}%{C_RESET}  "
-                f"limit:{a['ctx_limit']:,} tokens"
-            )
-            if a["task"]:
-                task_preview = a["task"].split("\n")[0][:120]
-                lines.append(f"  {C_DIM}    → {task_preview}{C_RESET}")
+        tree = _build_agent_tree(agents)
+        for agent, prefix, is_last in tree:
+            lines.extend(_render_agent_line(agent, prefix, is_last))
     else:
         lines.append(f"  {C_DIM}  (no agents running){C_RESET}")
     lines.append("")

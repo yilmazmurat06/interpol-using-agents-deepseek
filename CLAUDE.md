@@ -122,7 +122,7 @@ Retrieve full wanted-person data published by Interpol using a two-phase scrapin
 
 ### PSC-6: Concurrency must respect upstream rate
 - A thread pool that does `concurrency × (1/jitter)` requests per second WILL trigger Akamai. Document the formula in the Hard Rules and enforce it in defaults.
-- **Pattern:** Default `SCRAPE_CONCURRENCY=4` with `JITTER_MIN_SECONDS=0.5`, `JITTER_MAX_SECONDS=1.0` → ~5 req/s sustained. Document the relationship so the user understands the trade-off.
+- **Pattern:** Default `SCRAPE_CONCURRENCY=4` with `JITTER_MIN_SECONDS=0.3`, `JITTER_MAX_SECONDS=0.8` → ~7 req/s sustained. Document the relationship so the user understands the trade-off.
 
 ### PSC-7: Playwright tests must use BASE_URL env var
 - The orchestrator runs `pytest tests/` on the local machine with `BASE_URL=http://localhost:<port>` pointing at the live Docker stack. Tests that hardcode `http://localhost:8080` or any fixed URL break this contract.
@@ -132,6 +132,7 @@ Retrieve full wanted-person data published by Interpol using a two-phase scrapin
   ```
 - **Pattern:** `tests/requirements.txt` MUST include `playwright` and `pytest-playwright` so the live test runner can install dependencies before running.
 - **Pattern:** `page.goto(BASE_URL)` — not `page.goto("http://localhost:8080")`. Any hardcoded URL is a PSC-7 violation and will be caught by `audit_hard_rules.sh`.
+- **Pattern:** SSE endpoints (`text/event-stream`) are infinite streams. Playwright's `page.request.get()` waits for the response body to complete, which never happens → 30s timeout. Test SSE by navigating to the page first (`page.goto(BASE_URL)`), then using `page.evaluate()` with JavaScript `fetch("/api/stream")` + `AbortController` — the same-origin fetch from the loaded page avoids CORS blocks that occur from `about:blank`. Read the headers, then abort before the timeout fires.
 
 ---
 
@@ -217,7 +218,7 @@ Supporting
 - **Live DB-total counter**: `/api/filters` includes `total_notices` (unfiltered DB count) so the UI's top-left stat reflects the absolute DB row count, not the visible page count.
 
 ### Scraper Defaults (Akamai-safe)
-- `SCRAPE_CONCURRENCY=4`, `JITTER_MIN_SECONDS=0.5`, `JITTER_MAX_SECONDS=1.0` → ~5 req/s sustained. Stay under ~10 req/s to avoid Akamai blocks (see PSC-6).
+- `SCRAPE_CONCURRENCY=4`, `JITTER_MIN_SECONDS=0.3`, `JITTER_MAX_SECONDS=0.8` → ~7 req/s sustained. Stay under ~10 req/s to avoid Akamai blocks (see PSC-6).
 - Circuit breaker threshold: 5 consecutive 403s → 600s global pause.
 
 ### Configuration

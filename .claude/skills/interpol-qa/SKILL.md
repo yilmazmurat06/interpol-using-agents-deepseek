@@ -70,6 +70,7 @@ Cover the primary data flow:
 - Add explicit waits or retries for asynchronous SSE updates — they may arrive after the initial render
 - Test alarm/status badge visibility for records that meet the trigger condition
 - Test filter interactions: apply a filter, assert the grid updates, clear the filter, assert reset
+- **SSE endpoint testing:** `text/event-stream` endpoints are infinite streams. `page.request.get()` waits for the body to complete → 30s timeout. Use `page.evaluate()` with JavaScript `fetch()` + `AbortController` instead: **navigate to the page first** (`page.goto(BASE_URL)`) so the fetch runs from the same origin — otherwise `fetch()` from `about:blank` is blocked by CORS. Check the `content-type` header, then abort the connection before the timeout.
 
 ### 3. Verify `requirements.txt`
 - Parse all Python `import` and `from ... import` statements in the source tree

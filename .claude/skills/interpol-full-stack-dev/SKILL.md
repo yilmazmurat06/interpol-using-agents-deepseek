@@ -91,6 +91,7 @@ This checks:
 - All configuration values are read from environment variables.
 - `tests/test_ui.py` uses `BASE_URL = os.environ.get("BASE_URL", "http://localhost:PORT")` — never a hardcoded URL. The orchestrator sets `BASE_URL` when running Playwright against the live Docker stack.
 - `tests/requirements.txt` includes `playwright` and `pytest-playwright`.
+- **SSE test pattern:** `text/event-stream` endpoints are infinite streams. `page.request.get()` will always timeout (30s). Test SSE by navigating to the page first (`page.goto(BASE_URL)`), then `page.evaluate()` with JavaScript `fetch("/api/stream")` + `AbortController` — same-origin from the loaded page avoids CORS blocks that occur from `about:blank`. Read headers, then abort.
 
 ## Outputs
 - Python source code only (no Docker or docs).

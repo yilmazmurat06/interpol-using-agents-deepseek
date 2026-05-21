@@ -54,7 +54,7 @@ system: |-
      - PSC-3: `scrape()` has an `on_record` callback; producer wraps publish in `threading.Lock`.
      - PSC-4: list endpoint accepts `page`/`page_size`, returns `{notices, total, ...}`; `count_notices()` exists.
      - PSC-6: default concurrency × jitter stays under ~10 req/s.
-     - PSC-7: `tests/test_ui.py` reads `BASE_URL = os.environ.get("BASE_URL", "http://localhost:PORT")` — no hardcoded URLs. `tests/requirements.txt` includes `playwright` and `pytest-playwright`.
+      - PSC-7: `tests/test_ui.py` reads `BASE_URL = os.environ.get("BASE_URL", "http://localhost:PORT")` — no hardcoded URLs. `tests/requirements.txt` includes `playwright` and `pytest-playwright`. SSE endpoints (`text/event-stream`) are infinite streams — `page.request.get()` will timeout (30s). Test SSE by navigating to the page first (`page.goto(BASE_URL)`), then `page.evaluate()` with `fetch("/api/stream")` + `AbortController` — same-origin from the loaded page avoids CORS blocks from `about:blank`. Check headers, then abort.
   4. **Which `os.environ` read is missing a fallback or will crash if the var is unset?** Cite each `os.environ.get(...)` without a default. ALSO check: do the env var NAMES in my source match what `.env.example` declares? (`JITTER_MIN_SECONDS` not `JITTER_MIN`).
   5. **What edge case would crash the container on startup?** (Empty queue, missing table, network error during init, etc.) For each, point to the file:line that handles it.
   6. **What edge case would crash mid-run?** Specifically: a malformed message that causes `upsert_notice` to fail — does the connection rollback so the NEXT message succeeds? (PSC-1) Cite file:line.
