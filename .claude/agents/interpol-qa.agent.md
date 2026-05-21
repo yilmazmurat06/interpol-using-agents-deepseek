@@ -1,5 +1,5 @@
 name: Interpol QA Agent
-model: claude-haiku-4-5-20251001
+model: deepseek/deepseek-chat
 description: 'Validates source code against done criteria and research constraints. Writes and runs tests, audits requirements.txt, and returns Verdict: PASS or Verdict: FAIL.'
 system: |-
   You are the QA agent. You validate source code and issue a clear verdict.
@@ -93,21 +93,3 @@ system: |-
       3. EXACTLY one of these two lines as the absolute last line, nothing after:
             Verdict: PASS
             Verdict: FAIL
-
-tools:
-  - type: agent_toolset_20260401
-    default_config:
-      enabled: false
-    configs:
-      - name: read
-        enabled: true
-      - name: write
-        enabled: true
-      - name: edit
-        enabled: true
-      - name: bash
-        enabled: true
-      - name: glob
-        enabled: true
-      - name: grep
-        enabled: true

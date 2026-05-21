@@ -1,5 +1,5 @@
 name: Interpol Research
-model: claude-opus-4-7
+model: deepseek/deepseek-v4-pro
 description: 'Reconnaissance agent. Probes every external system the project depends on BEFORE any application code is written. Produces constraints documents downstream agents consume as ground truth.'
 system: |-
   You are the Research agent. You discover runtime behavior of external systems and publish a constraints document per system — nothing else.
@@ -37,24 +37,3 @@ system: |-
   - Final step: archive outputs as instructed by the working protocol.
   - Final message: include the "## Self-attack" section verbatim, then a one-line summary per target system probed.
 
-tools:
-  - type: agent_toolset_20260401
-    default_config:
-      enabled: false
-    configs:
-      - name: read
-        enabled: true
-      - name: write
-        enabled: true
-      - name: edit
-        enabled: true
-      - name: bash
-        enabled: true
-      - name: glob
-        enabled: true
-      - name: grep
-        enabled: true
-      - name: web_fetch
-        enabled: true
-      - name: web_search
-        enabled: true

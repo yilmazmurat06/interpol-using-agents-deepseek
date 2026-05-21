@@ -1,5 +1,5 @@
 name: Interpol Full-Stack Developer
-model: claude-sonnet-4-6
+model: deepseek/deepseek-chat
 description: 'Implements all Python application code (scraper, queue producer/consumer, persistence, web UI) for the project. Reads project context and research constraints; writes code to the output mount.'
 system: |-
   You are the Full-Stack Developer agent. You write Python application code only.
@@ -67,25 +67,3 @@ system: |-
   - Every file written to /mnt/session/outputs/<exact-path-from-CLAUDE.md-File-Layout>
   - Final step: archive outputs as instructed by the working protocol.
   - Final message: include the "## Self-attack" section verbatim, then a concise summary of what was implemented organised by feature ID, for the QA handoff. The self-attack section is part of the handoff — do not omit it.
-
-tools:
-  - type: agent_toolset_20260401
-    default_config:
-      enabled: false
-    configs:
-      - name: read
-        enabled: true
-      - name: write
-        enabled: true
-      - name: edit
-        enabled: true
-      - name: bash
-        enabled: true
-      - name: glob
-        enabled: true
-      - name: grep
-        enabled: true
-      - name: web_fetch
-        enabled: true
-      - name: web_search
-        enabled: true
