@@ -65,7 +65,56 @@ ROLE_COLORS = {
     "ORCHESTRATOR":  C_BLUE,
 }
 
+# ── Context limit tracking ────────────────────────────────────────────────────
+
+# Model → context window (tokens). Sources: DeepSeek API docs.
+# RSS memory is used as a proxy for context pressure — higher RSS ≈ more
+# conversation history + system prompts loaded in the LLM process.
+# These are rough estimates calibrated on macOS ARM64 opencode processes.
+MODEL_CONTEXT = {
+    "interpol-research":     ("deepseek-v4-pro",     128_000),
+    "interpol-developer":    ("deepseek-v4-pro",       128_000),
+    "interpol-devops":       ("deepseek-chat",       128_000),
+    "interpol-qa":           ("deepseek-chat",       128_000),
+    "interpol-orchestrator": ("deepseek-v4-flash",  128_000),
+}
+
+# RSS thresholds (MB) mapped to approximate context pressure levels.
+# Calibrated: ~200 MB idle → ~1.5 GB at heavy context usage.
+RSS_CONTEXT_LOW     = 400   # <10% context — normal
+RSS_CONTEXT_MEDIUM  = 800   # 10-40% context — growing
+RSS_CONTEXT_HIGH    = 1200  # 40-70% context — caution
+RSS_CONTEXT_CRITICAL = 1600 # >70% context — near limit
+
 # ── Process scanning ──────────────────────────────────────────────────────────
+
+def estimate_context_pressure(rss_mb: float) -> tuple[str, str, int]:
+    """
+    Estimate context window pressure from RSS memory.
+    Returns (label, bar_color, estimated_pct).
+    """
+    if rss_mb < RSS_CONTEXT_LOW:
+        return f"{rss_mb:.0f}MB", C_GREEN, 5
+    elif rss_mb < RSS_CONTEXT_MEDIUM:
+        pct = int(((rss_mb - RSS_CONTEXT_LOW) / (RSS_CONTEXT_MEDIUM - RSS_CONTEXT_LOW)) * 30) + 5
+        return f"{rss_mb:.0f}MB", C_GREEN, pct
+    elif rss_mb < RSS_CONTEXT_HIGH:
+        pct = int(((rss_mb - RSS_CONTEXT_MEDIUM) / (RSS_CONTEXT_HIGH - RSS_CONTEXT_MEDIUM)) * 30) + 35
+        return f"{rss_mb:.0f}MB", C_YELLOW, pct
+    elif rss_mb < RSS_CONTEXT_CRITICAL:
+        pct = int(((rss_mb - RSS_CONTEXT_HIGH) / (RSS_CONTEXT_CRITICAL - RSS_CONTEXT_HIGH)) * 25) + 65
+        return f"{rss_mb:.0f}MB", C_YELLOW, pct
+    else:
+        pct = min(int(((rss_mb - RSS_CONTEXT_CRITICAL) / 800) * 30) + 90, 100)
+        return f"{rss_mb:.0f}MB", C_RED, pct
+
+
+def context_bar(pct: int, width: int = 20) -> str:
+    """Render a compact progress bar."""
+    filled = int(width * pct / 100)
+    empty = width - filled
+    return f"[{'█' * filled}{'░' * empty}]"
+
 
 def scan_agents() -> list[dict]:
     """Find all running opencode agent processes."""
@@ -106,6 +155,9 @@ def scan_agents() -> list[dict]:
                 if len(task) > 200:
                     task = task[:200] + "..."
 
+            model_name, ctx_limit = MODEL_CONTEXT.get(agent_name, ("unknown", 128_000))
+            ctx_label, ctx_color, ctx_pct = estimate_context_pressure(round(rss_kb / 1024, 1))
+
             agents.append({
                 "pid":        pid,
                 "role":       role,
@@ -116,6 +168,11 @@ def scan_agents() -> list[dict]:
                 "start":      start,
                 "elapsed":    elapsed,
                 "task":       task,
+                "model":      model_name,
+                "ctx_limit":  ctx_limit,
+                "ctx_label":  ctx_label,
+                "ctx_color":  ctx_color,
+                "ctx_pct":    ctx_pct,
             })
     except Exception:
         pass
@@ -211,7 +268,17 @@ def render_dashboard(agents: list[dict], progress: list[dict],
         for a in agents:
             color = ROLE_COLORS.get(a["role"], C_RESET)
             status = f"{color}● RUNNING{C_RESET}" if a["cpu"] > 0 else f"{C_DIM}○ IDLE{C_RESET}"
-            lines.append(f"  {status}  {C_BOLD}{a['role']}{C_RESET}  PID:{a['pid']}  CPU:{a['cpu']:.1f}%  MEM:{a['mem']:.1f}%  RSS:{a['rss_mb']}MB  Elapsed:{a['elapsed']}")
+            ctx_bar_str = context_bar(a["ctx_pct"])
+            lines.append(
+                f"  {status}  {C_BOLD}{a['role']}{C_RESET}  PID:{a['pid']}  "
+                f"CPU:{a['cpu']:.1f}%  MEM:{a['mem']:.1f}%  "
+                f"RSS:{a['rss_mb']}MB  Elapsed:{a['elapsed']}"
+            )
+            lines.append(
+                f"  {C_DIM}    model:{a['model']}  "
+                f"context:{a['ctx_color']}{ctx_bar_str} {a['ctx_pct']}%{C_RESET}  "
+                f"limit:{a['ctx_limit']:,} tokens"
+            )
             if a["task"]:
                 task_preview = a["task"].split("\n")[0][:120]
                 lines.append(f"  {C_DIM}    → {task_preview}{C_RESET}")

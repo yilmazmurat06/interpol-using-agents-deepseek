@@ -1,6 +1,6 @@
 ---
 description: Implements all Python application code: scraper, RabbitMQ producer/consumer, PostgreSQL persistence, MinIO storage, and Flask web UI.
-model: deepseek/deepseek-chat
+model: deepseek/deepseek-v4-pro
 tools:
   bash: true
   read: true
@@ -10,9 +10,9 @@ tools:
   grep: true
   webfetch: true
   skill: true
-  task: false
+  task: true
   question: false
-  todowrite: false
+  todowrite: true
 permission:
   websearch: allow
 ---
