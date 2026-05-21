@@ -1,0 +1,26 @@
+In this task, wanted data published by Interpol is retrieved and added to a queue. This information read from the queue is recorded in the database and shared via a web server. 
+The application should be implemented in the architecture specified below. All operations should be presented to the user with a visual interface and prepared in a way suitable for the Docker environment. 
+
+Required Materials:
+The architecture consists as the following.
+Container A: Red list data published by “Interpol” is continuously retrieved for a specific period and transferred to the queue system in Container C. While scraping the Interpol, system
+must not be detected as "bot". This is important for sustainability.
+
+Container B: It should be a web server prepared with Python. The queue in Container C should be listened to here. The information obtained from the queue should be saved in the desired database. 
+This information should be displayed on a simple HTML web page with time information via the web server. The interface page shared by the web server should be updated with each piece of 
+information obtained from the queue. The updating of previously recorded information should be shown as an alarm on the interface. 
+
+Container C: Contains “RabbitMQ”, a message queuing system.
+
+Supporting Services: PostgreSQL for notice storage, MinIO for image storage.
+
+Variables in the structure must be modifiable via environment-config (changes should be possible without modifying the code),
+The structure must be built according to Object-Oriented Programming principles,
+The desired software must be prepared in a way suitable for the Docker environment and built and deployed by dockerizing. Docker-compose must be used.
+Documentation such as software tests, software operating requirements, comments and detailed explanation files, and installation instructions must be prepared
+(requirements.txt, doc-test, readme.md, .dockerfile, etc.). 
+
+
+Other Details:
+The Python programming language must be used throughout the task.
+All kinds of open source resources can be used.

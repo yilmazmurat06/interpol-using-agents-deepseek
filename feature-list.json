@@ -1,0 +1,163 @@
+{
+  "project": "Interpol Red Notice Scraper — Enhanced",
+  "last_updated": "2026-05-20 15:19",
+  "features": [
+    {
+      "id": "F001",
+      "category": "scraper",
+      "description": "Two-phase scraper: list endpoint for IDs + individual endpoint for full notice details",
+      "priority": 1,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "Phase 1: fetches all notice IDs from GET /notices/v1/red (paginated, max 160/page)",
+        "Phase 2: for each notice ID, fetches full detail from GET /notices/v1/red/{id}",
+        "Jitter delay (1-3.5s) applied between BOTH list pages AND individual detail calls",
+        "Full detail payload includes: forename, name, date_of_birth, place_of_birth, sex_id, height, weight, nationalities, languages_spoken_ids, eyes_colors_id, hairs_id, distinguishing_marks, arrest_warrants (each with charge + issuing_country_id)",
+        "Scrape interval read from SCRAPE_INTERVAL_SECONDS env var",
+        "Retry mechanism (max 3 retries) on HTTP errors for both phases",
+        "If all retries fail for an individual notice, it is skipped and logged — not fatal",
+        "A single RabbitMQ message published per notice with full enriched payload"
+      ]
+    },
+    {
+      "id": "F002",
+      "category": "queue",
+      "description": "RabbitMQ producer — publishes enriched notice payloads to the queue",
+      "priority": 2,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "RabbitMQ connection created from RABBITMQ_URL env var",
+        "Each message contains the full enriched notice payload as JSON",
+        "Message includes: notice_id, fetched_at, forename, name, date_of_birth, place_of_birth, sex_id, height, weight, nationalities, languages, arrest_warrants list",
+        "Queue name read from RABBITMQ_QUEUE env var",
+        "Reconnect mechanism on connection drop",
+        "Dead-letter queue declared with x-dead-letter-routing-key"
+      ]
+    },
+    {
+      "id": "F003",
+      "category": "queue",
+      "description": "RabbitMQ consumer — reads enriched messages and persists to DB",
+      "priority": 3,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "Consumer continuously listens to the queue",
+        "On message receipt, full notice data is upserted into PostgreSQL",
+        "arrest_warrants stored as JSONB column",
+        "is_alarm flag set only when meaningful fields change (name, nationalities, arrest_warrants) — not image_url",
+        "Failed messages sent to dead letter queue (basic_nack requeue=False)",
+        "Every operation is logged with notice_id"
+      ]
+    },
+    {
+      "id": "F004",
+      "category": "database",
+      "description": "Enhanced database model with full notice detail fields",
+      "priority": 4,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "RedNotice model includes all fields: notice_id (PK), forename, name, date_of_birth, place_of_birth, sex_id, height, weight, nationalities (TEXT[]), languages (TEXT[]), eyes_colors_id, hairs_id, distinguishing_marks, arrest_warrants (JSONB), image_url, created_at, updated_at, received_at, is_alarm",
+        "All fields from external API are nullable — no NOT NULL except notice_id, name, created_at, updated_at, is_alarm",
+        "New records can be inserted",
+        "Existing records can be updated (updated_at changes, is_alarm set when meaningful fields changed)",
+        "get_filter_options() returns distinct nationalities and issuing countries for UI dropdowns",
+        "get_all_notices() supports filter params: nationality, sex_id, issuing_country, charges_keyword, is_alarm_only"
+      ]
+    },
+    {
+      "id": "F005",
+      "category": "backend",
+      "description": "Flask API with filter-aware endpoints",
+      "priority": 5,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "GET / returns the HTML UI",
+        "GET /api/notices returns JSON list, supports query params: nationality, sex, issuing_country, charges, is_alarm, limit",
+        "GET /api/notices/<path:notice_id> returns single record (path: converter for YYYY/NNNNN IDs)",
+        "GET /api/filters returns available filter options: {nationalities, issuing_countries, sex_options}",
+        "GET /api/thumbnail/<path:notice_id> proxies MinIO thumbnail — never exposes minio:9000 URL to browser",
+        "GET /api/stream SSE endpoint for live updates",
+        "GET /health liveness check",
+        "Port from FLASK_PORT env var"
+      ]
+    },
+    {
+      "id": "F006",
+      "category": "frontend",
+      "description": "Rich HTML UI with multi-field filtering, sorting, and detailed notice cards",
+      "priority": 6,
+      "status": "pending",
+      "assigned_to": null,
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "Filter panel: text search (name), nationality multi-select with flag emojis, gender selector (M/F/All), issuing country multi-select, charges keyword input, alarms-only toggle",
+        "Filter dropdowns populated dynamically from GET /api/filters on page load",
+        "Filtering sends requests to GET /api/notices with query params (server-side filtering)",
+        "Sort options: newest first, name A-Z, nationality",
+        "Each notice card shows: photo (CDN URL in img src), full name, age calculated from date_of_birth, nationality flags, sex icon, charges from arrest_warrants, issuing countries, alarm badge",
+        "Cards update in-place on SSE events — never replace the img element",
+        "Nationality and country flags use Unicode Regional Indicator Symbol Letters (ISO-2 → flag emoji)",
+        "Images use object-fit: contain with a dark background container"
+      ]
+    },
+    {
+      "id": "F007",
+      "category": "docker",
+      "description": "Docker infrastructure — 5 services, compose, env config",
+      "priority": 7,
+      "status": "pending",
+      "assigned_to": "devops",
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "docker-compose up --build runs without errors",
+        "All 5 services start: container-a, container-b, rabbitmq, postgres, minio",
+        "Healthchecks on rabbitmq and postgres; container-a and container-b depend_on them",
+        "All credentials and config use ${ENV_VAR} references only — no hardcoded values",
+        "All variables documented in .env.example with one-line descriptions",
+        "PostgreSQL, RabbitMQ, and MinIO data persisted with named volumes"
+      ]
+    },
+    {
+      "id": "F008",
+      "category": "documentation",
+      "description": "README, setup guidelines, test documentation",
+      "priority": 8,
+      "status": "pending",
+      "assigned_to": "devops",
+      "iteration": 0,
+      "qa_verdict": null,
+      "git_commit": null,
+      "done_criteria": [
+        "README.md includes architecture overview and quick start (cp .env.example .env && docker-compose up --build)",
+        "Each container has its own requirements.txt",
+        ".env.example includes all variables with one-line descriptions",
+        "How to run tests is documented",
+        "Volume wipe requirement documented for credential changes (restart required when RabbitMQ or PostgreSQL credentials change)"
+      ]
+    }
+  ]
+}
