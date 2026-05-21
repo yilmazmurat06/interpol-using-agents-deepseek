@@ -1,3 +1,66 @@
-venv
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
 .env
-.gitattributes
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+playwright-report/
+test-results/
+
+# Docker
+.docker/
+
+# Handoff files (generated at runtime)
+handoff/
+
+# Progress logs (generated at runtime)
+claude-progress.txt
+
+# Managed agent state (generated at runtime)
+.claude/managed/
+
+# OpenCode local state
+.opencode/node_modules/
+.opencode/package-lock.json
+.ruff_cache
