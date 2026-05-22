@@ -1,0 +1,155 @@
+# =============================================================================
+# Interpol Red Notice Scraper — Docker Compose
+#
+# 5 services: container-a (scraper/producer), container-b (web+consumer),
+# rabbitmq, postgres, minio.
+#
+# All config via environment variables — no hardcoded credentials, ports,
+# or hostnames. Internal connections use Docker service names.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Container A — Two-phase scraper + RabbitMQ producer
+  # ---------------------------------------------------------------------------
+  container-a:
+    build:
+      context: ./container_a
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      INTERPOL_SOURCE_URL: ${INTERPOL_SOURCE_URL}
+      SCRAPE_INTERVAL_SECONDS: ${SCRAPE_INTERVAL_SECONDS}
+      JITTER_MIN_SECONDS: ${JITTER_MIN_SECONDS}
+      JITTER_MAX_SECONDS: ${JITTER_MAX_SECONDS}
+      SCRAPE_CONCURRENCY: ${SCRAPE_CONCURRENCY}
+      SCRAPE_MAX_RETRIES: ${SCRAPE_MAX_RETRIES}
+      CIRCUIT_BREAKER_THRESHOLD: ${CIRCUIT_BREAKER_THRESHOLD}
+      CIRCUIT_BREAKER_PAUSE_SECONDS: ${CIRCUIT_BREAKER_PAUSE_SECONDS}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - interpol-net
+
+  # ---------------------------------------------------------------------------
+  # Container B — Flask web server + RabbitMQ consumer
+  # ---------------------------------------------------------------------------
+  container-b:
+    build:
+      context: ./container_b
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE}
+      POSTGRES_DSN: ${POSTGRES_DSN}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      WEB_PORT: ${WEB_PORT:-8080}
+      LOG_LEVEL: ${LOG_LEVEL}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - interpol-net
+
+  # ---------------------------------------------------------------------------
+  # RabbitMQ — message broker
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    ports:
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # PSC-2: Server heartbeat configured to 600s to match client-side pika config.
+      # Negotiated heartbeat = min(server, client). If server default (60s) is used,
+      # idle connections will drop after 60s regardless of client params.heartbeat=600.
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit heartbeat 600"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    networks:
+      - interpol-net
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — notice persistence
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    networks:
+      - interpol-net
+
+  # ---------------------------------------------------------------------------
+  # MinIO — object storage for raw notice payloads
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    restart: unless-stopped
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      # MC_HOST_local is required for healthcheck via `mc ready local`
+      MC_HOST_local: http://${MINIO_ACCESS_KEY}:${MINIO_SECRET_KEY}@localhost:9000
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    networks:
+      - interpol-net
+
+# ---------------------------------------------------------------------------
+# Named volumes for stateful services
+# ---------------------------------------------------------------------------
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:
+
+# ---------------------------------------------------------------------------
+# Shared network — all services communicate by Docker service name
+# ---------------------------------------------------------------------------
+networks:
+  interpol-net:
+    driver: bridge

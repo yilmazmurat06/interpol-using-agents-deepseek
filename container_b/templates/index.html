@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interpol Red Notice Monitor</title>
+<!-- No external fonts — system font stacks ensure instant page load without network dependencies -->
+<style>
+/* ============================================================
+   CSS Custom Properties — dark forensic palette
+   ============================================================ */
+:root {
+  --color-bg:           #0a0a0f;
+  --color-surface:      #12121d;
+  --color-surface-alt:  #1a1a2e;
+  --color-surface-dark: #0d0d1a;
+  --color-border:       #1f2035;
+  --color-accent:       #e63946;
+  --color-accent-dim:   #8b1a1a;
+  --color-alarm-glow:   #ff3366;
+  --color-text-primary: #e8e8ec;
+  --color-text-secondary: #8892a4;
+  --color-text-muted:   #555a6e;
+  --color-input-bg:     #1a1a2e;
+  --color-input-border: #2a2d3e;
+  --color-focus:        #e63946;
+  --font-display:       'Georgia', 'Times New Roman', 'DejaVu Serif', serif;
+  --font-mono:          'Courier New', 'Consolas', 'Monaco', 'DejaVu Sans Mono', monospace;
+  --font-body:          'Georgia', 'Times New Roman', 'DejaVu Serif', serif;
+  --radius-sm:          3px;
+  --radius-md:          6px;
+  --radius-lg:          10px;
+  --spacing-xs:         4px;
+  --spacing-sm:         8px;
+  --spacing-md:         16px;
+  --spacing-lg:         24px;
+  --spacing-xl:         32px;
+  --shadow-card:        0 2px 12px rgba(0,0,0,0.6);
+  --transition-fast:    150ms ease;
+}
+
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ============================================================
+   Layout
+   ============================================================ */
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  overflow-y: auto;
+  max-height: 100vh;
+  position: sticky;
+  top: 0;
+}
+.main-content {
+  flex: 1;
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+}
+
+/* ============================================================
+   Header
+   ============================================================ */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+}
+.header-title {
+  font-family: var(--font-mono);
+  font-size: 20px;
+  color: var(--color-accent);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.header-stats {
+  display: flex;
+  gap: var(--spacing-lg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.header-stats .stat-value {
+  color: var(--color-accent);
+  font-size: 22px;
+  font-weight: bold;
+}
+.header-stats .stat-label {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--color-text-muted);
+}
+
+/* ============================================================
+   Filter Panel
+   ============================================================ */
+.filter-section {
+  margin-bottom: var(--spacing-sm);
+}
+.filter-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+}
+.filter-input, .filter-select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.filter-input:focus, .filter-select:focus {
+  border-color: var(--color-focus);
+}
+.filter-select[multiple] {
+  min-height: 100px;
+}
+.filter-select option {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  padding: 4px;
+}
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--spacing-sm) 0;
+}
+.filter-toggle input[type="checkbox"] {
+  accent-color: var(--color-accent);
+  width: 16px;
+  height: 16px;
+}
+.btn-filter {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: var(--spacing-sm);
+}
+.btn-filter:hover {
+  background: var(--color-accent);
+  color: #fff;
+}
+.btn-reset {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: var(--spacing-xs);
+  transition: all var(--transition-fast);
+}
+.btn-reset:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-secondary);
+}
+
+/* Sidebar branding */
+.sidebar-brand {
+  text-align: center;
+  margin-bottom: var(--spacing-md);
+}
+.sidebar-brand .brand-icon {
+  font-size: 32px;
+  margin-bottom: var(--spacing-sm);
+}
+.sidebar-brand .brand-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+}
+
+/* ============================================================
+   Card Grid
+   ============================================================ */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--spacing-md);
+}
+.card-grid.single-col {
+  grid-template-columns: 1fr;
+}
+
+/* ============================================================
+   Notice Card
+   ============================================================ */
+.notice-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: all 0.4s ease;
+  position: relative;
+}
+.notice-card.alarm {
+  border-color: var(--color-accent);
+  border-width: 2px;
+  animation: alarm-pulse 2s ease-in-out infinite;
+}
+@keyframes alarm-pulse {
+  0%, 100% { box-shadow: 0 0 8px rgba(230,57,70,0.4); }
+  50% { box-shadow: 0 0 20px rgba(255,51,102,0.7), 0 0 40px rgba(230,57,70,0.3); }
+}
+.notice-card.sse-flash {
+  animation: sse-highlight 1.5s ease-out;
+}
+@keyframes sse-highlight {
+  0% { border-color: var(--color-accent); box-shadow: 0 0 15px rgba(230,57,70,0.8); }
+  100% { border-color: var(--color-border); box-shadow: var(--shadow-card); }
+}
+
+/* Image container — object-fit: contain + dark background (LL-007) */
+.card-thumb-wrap {
+  height: 200px;
+  background: var(--color-surface-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.card-thumb-wrap img {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+  display: block;
+}
+.card-thumb-wrap .no-image {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+/* Card body */
+.card-body {
+  padding: var(--spacing-md);
+}
+.card-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+  margin-bottom: var(--spacing-xs);
+  word-break: break-word;
+}
+.card-name .forename {
+  font-weight: 400;
+}
+.card-name .surname {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* Card metadata */
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.card-meta .meta-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--color-surface-alt);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+}
+.meta-sex-male { color: #5b9bd5; }
+.meta-sex-female { color: #e891c8; }
+
+/* Nationality flags */
+.card-flags {
+  display: flex;
+  gap: 4px;
+  font-size: 20px;
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Charges section */
+.card-charges {
+  margin-top: var(--spacing-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+}
+.card-charges .charge-label {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 9px;
+  margin-bottom: 3px;
+}
+.card-charges .charge-item {
+  color: var(--color-text-secondary);
+  margin-bottom: 2px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.card-charges .country-tag {
+  display: inline-block;
+  background: var(--color-accent-dim);
+  color: var(--color-text-primary);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  margin-right: 4px;
+  margin-top: 4px;
+  font-size: 10px;
+}
+
+/* Alarm badge */
+.alarm-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  z-index: 2;
+  box-shadow: 0 0 12px rgba(230,57,70,0.5);
+  animation: badge-flash 3s ease-in-out infinite;
+}
+@keyframes badge-flash {
+  0%, 95% { opacity: 1; }
+  96%, 100% { opacity: 0.6; }
+}
+.alarm-badge.hidden { display: none; }
+
+/* Card timestamp */
+.card-ts {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-sm);
+}
+
+/* ============================================================
+   Pagination (PSC-4)
+   ============================================================ */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-md) 0;
+  border-top: 1px solid var(--color-border);
+}
+.pagination button {
+  padding: 6px 12px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-input-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 36px;
+}
+.pagination button:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.pagination button.active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+.pagination button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.pagination .ellipsis {
+  color: var(--color-text-muted);
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+}
+
+/* ============================================================
+   Loading / Empty states
+   ============================================================ */
+.loading, .empty-state {
+  text-align: center;
+  padding: var(--spacing-xl);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+.empty-state .empty-icon { font-size: 48px; margin-bottom: var(--spacing-md); }
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width: 768px) {
+  .app-layout { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    min-width: 100%;
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+  .header {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    align-items: flex-start;
+  }
+}
+</style>
+</head>
+<body>
+
+<div class="app-layout">
+  <!-- Sidebar — Filter Panel -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">&#x1F6A8;</div>
+      <div class="brand-name">Interpol Red Notice Monitor</div>
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-label" for="filter-name">Search by Name</label>
+      <input type="text" id="filter-name" class="filter-input" placeholder="e.g. SMITH" autocomplete="off">
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-label" for="filter-nationality">Nationality</label>
+      <select id="filter-nationality" class="filter-select" size="1">
+        <option value="">All Nationalities</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-label" for="filter-sex">Gender</label>
+      <select id="filter-sex" class="filter-select">
+        <option value="">All</option>
+        <option value="M">Male</option>
+        <option value="F">Female</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-label" for="filter-country">Issuing Country</label>
+      <select id="filter-country" class="filter-select" size="1">
+        <option value="">All Countries</option>
+      </select>
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-label" for="filter-charges">Charges Keyword</label>
+      <input type="text" id="filter-charges" class="filter-input" placeholder="e.g. murder, fraud" autocomplete="off">
+    </div>
+
+    <div class="filter-section">
+      <label class="filter-toggle">
+        <input type="checkbox" id="filter-alarms">
+        <span>Alarms Only</span>
+      </label>
+    </div>
+
+    <button class="btn-filter" id="btn-apply">Apply Filters</button>
+    <button class="btn-reset" id="btn-reset">Reset All</button>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main-content">
+    <div class="header">
+      <span class="header-title">&#x26D4; RED NOTICES</span>
+      <div class="header-stats">
+        <div><span class="stat-value" id="stat-total">0</span><span class="stat-label">Total in DB</span></div>
+        <div><span class="stat-value" id="stat-visible">0</span><span class="stat-label">Visible</span></div>
+        <div><span class="stat-value" id="stat-alarms">0</span><span class="stat-label">Alarms</span></div>
+      </div>
+    </div>
+
+    <div id="card-grid" class="card-grid"></div>
+    <div id="pagination-container"></div>
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   Global State
+   ============================================================ */
+let currentPage = 1;
+let currentFilters = {};
+let totalNotices = 0;
+
+/* ============================================================
+   Country Flag (LL-008)
+   ============================================================ */
+function countryFlag(code) {
+  if (!code || code.length !== 2) return code || '';
+  return Array.from(code.toUpperCase())
+    .map(c => String.fromCodePoint(c.charCodeAt(0) + 0x1F1A5))
+    .join('');
+}
+
+/* ============================================================
+   Age Calculation
+   ============================================================ */
+function calculateAge(dob) {
+  if (!dob) return null;
+  const m = dob.match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  const month = m[2] ? parseInt(m[2], 10) - 1 : 0;
+  const day = m[3] ? parseInt(m[3], 10) : 1;
+  const birth = new Date(year, month, day);
+  const now = new Date();
+  let age = now.getFullYear() - birth.getFullYear();
+  if (now.getMonth() < birth.getMonth() || (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age > 0 ? age : null;
+}
+
+/* ============================================================
+   Card Builder
+   ============================================================ */
+function buildCard(notice) {
+  const isAlarm = notice.is_alarm === true;
+  const card = document.createElement('div');
+  card.className = 'notice-card' + (isAlarm ? ' alarm' : '');
+  card.id = 'card-' + notice.notice_id.replace(/\//g, '-');
+
+  // Age
+  const age = calculateAge(notice.date_of_birth);
+  const ageText = age !== null ? age + ' yrs' : 'Age unknown';
+
+  // Sex icon
+  let sexIcon = '';
+  let sexClass = '';
+  if (notice.sex_id === 'M') { sexIcon = '&#x2642;'; sexClass = 'meta-sex-male'; }
+  else if (notice.sex_id === 'F') { sexIcon = '&#x2640;'; sexClass = 'meta-sex-female'; }
+
+  // Nationality flags
+  const flags = (notice.nationalities || []).map(c => countryFlag(c)).join(' ') || '';
+
+  // Charges
+  const warrants = notice.arrest_warrants || [];
+  let chargesHtml = '';
+  if (warrants.length > 0) {
+    chargesHtml = '<div class="card-charges"><div class="charge-label">Charges</div>';
+    warrants.forEach(w => {
+      if (w.charge) {
+        chargesHtml += '<div class="charge-item">' + escHtml(truncate(w.charge, 150)) + '</div>';
+      }
+    });
+    const countries = [...new Set(warrants.map(w => w.issuing_country_id).filter(Boolean))];
+    countries.forEach(c => {
+      chargesHtml += '<span class="country-tag">' + countryFlag(c) + ' ' + escHtml(c) + '</span>';
+    });
+    chargesHtml += '</div>';
+  }
+
+  // Name
+  const forename = notice.forename ? escHtml(notice.forename) : '';
+  const surname = escHtml(notice.name || 'UNKNOWN');
+
+  // Image URL — use the API proxy
+  const thumbUrl = notice.notice_id ? '/api/thumbnail/' + encodeURIComponent(notice.notice_id) : '';
+
+  // Timestamp
+  const ts = notice.received_at ? new Date(notice.received_at).toLocaleString() : '';
+
+  card.innerHTML =
+    '<div class="alarm-badge' + (isAlarm ? '' : ' hidden') + '">ALARM</div>' +
+    '<div class="card-thumb-wrap">' +
+      (thumbUrl
+        ? '<img src="' + thumbUrl + '" alt="' + surname + '" loading="lazy">'
+        : '<span class="no-image">NO IMAGE</span>') +
+    '</div>' +
+    '<div class="card-body">' +
+      '<div class="card-name">' +
+        (forename ? '<span class="forename">' + forename + '</span> ' : '') +
+        '<span class="surname">' + surname + '</span>' +
+      '</div>' +
+      '<div class="card-flags">' + (flags || '&#x1F3F3;') + '</div>' +
+      '<div class="card-meta">' +
+        '<span class="meta-item">' + escHtml(ageText) + '</span>' +
+        (sexIcon ? '<span class="meta-item ' + sexClass + '">' + sexIcon + '</span>' : '') +
+      '</div>' +
+      chargesHtml +
+      '<div class="card-ts" data-field="received_at">' + ts + '</div>' +
+    '</div>';
+
+  return card;
+}
+
+/* ============================================================
+   In-place Card Update (LL-006) — NEVER replace <img>
+   ============================================================ */
+function updateCardInPlace(card, notice) {
+  // Update name
+  const nameEl = card.querySelector('.card-name');
+  if (nameEl) {
+    const forename = notice.forename ? escHtml(notice.forename) : '';
+    const surname = escHtml(notice.name || 'UNKNOWN');
+    nameEl.innerHTML = (forename ? '<span class="forename">' + forename + '</span> ' : '') +
+      '<span class="surname">' + surname + '</span>';
+  }
+
+  // Update nationality flags
+  const flagsEl = card.querySelector('.card-flags');
+  if (flagsEl) {
+    const flags = (notice.nationalities || []).map(c => countryFlag(c)).join(' ') || '&#x1F3F3;';
+    flagsEl.textContent = flags;
+  }
+
+  // Update age
+  const metaItems = card.querySelectorAll('.card-meta .meta-item');
+  if (metaItems.length > 0) {
+    const age = calculateAge(notice.date_of_birth);
+    metaItems[0].textContent = age !== null ? age + ' yrs' : 'Age unknown';
+  }
+
+  // Update charges
+  const chargesEl = card.querySelector('.card-charges');
+  if (chargesEl) {
+    const warrants = notice.arrest_warrants || [];
+    let html = '';
+    if (warrants.length > 0) {
+      html = '<div class="charge-label">Charges</div>';
+      warrants.forEach(w => {
+        if (w.charge) html += '<div class="charge-item">' + escHtml(truncate(w.charge, 150)) + '</div>';
+      });
+      const countries = [...new Set(warrants.map(w => w.issuing_country_id).filter(Boolean))];
+      countries.forEach(c => {
+        html += '<span class="country-tag">' + countryFlag(c) + ' ' + escHtml(c) + '</span>';
+      });
+    }
+    chargesEl.innerHTML = html;
+  }
+
+  // Update alarm badge
+  const badge = card.querySelector('.alarm-badge');
+  if (badge) {
+    badge.classList.toggle('hidden', !notice.is_alarm);
+  }
+  card.classList.toggle('alarm', notice.is_alarm === true);
+
+  // Update timestamp
+  const tsEl = card.querySelector('.card-ts');
+  if (tsEl && notice.received_at) {
+    tsEl.textContent = new Date(notice.received_at).toLocaleString();
+  }
+
+  // Flash effect
+  card.classList.add('sse-flash');
+  setTimeout(() => card.classList.remove('sse-flash'), 1600);
+}
+
+/* ============================================================
+   Pagination (PSC-4)
+   ============================================================ */
+function renderPagination(total, page, pageSize) {
+  const container = document.getElementById('pagination-container');
+  if (!container) return;
+
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (pages <= 1) { container.innerHTML = ''; return; }
+
+  let html = '<div class="pagination">';
+  html += '<button ' + (page <= 1 ? 'disabled' : '') + ' data-page="' + (page - 1) + '">&#x276E; Prev</button>';
+
+  // Compact pagination with ellipsis
+  const maxButtons = 7;
+  let start = Math.max(1, page - Math.floor(maxButtons / 2));
+  let end = Math.min(pages, start + maxButtons - 1);
+  if (end - start < maxButtons - 1) start = Math.max(1, end - maxButtons + 1);
+
+  if (start > 1) {
+    html += '<button data-page="1">1</button>';
+    if (start > 2) html += '<span class="ellipsis">&hellip;</span>';
+  }
+  for (let p = start; p <= end; p++) {
+    html += '<button data-page="' + p + '"' + (p === page ? ' class="active"' : '') + '>' + p + '</button>';
+  }
+  if (end < pages) {
+    if (end < pages - 1) html += '<span class="ellipsis">&hellip;</span>';
+    html += '<button data-page="' + pages + '">' + pages + '</button>';
+  }
+  html += '<button ' + (page >= pages ? 'disabled' : '') + ' data-page="' + (page + 1) + '">Next &#x276F;</button>';
+  html += '</div>';
+
+  container.innerHTML = html;
+
+  // Wire click handlers
+  container.querySelectorAll('button[data-page]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = parseInt(btn.dataset.page, 10);
+      if (p && p !== currentPage) {
+        currentPage = p;
+        fetchNotices();
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      }
+    });
+  });
+}
+
+/* ============================================================
+   Fetch & Render Notices
+   ============================================================ */
+async function fetchNotices() {
+  const grid = document.getElementById('card-grid');
+  grid.innerHTML = '<div class="loading">Loading notices...</div>';
+
+  const params = new URLSearchParams({ page: currentPage, page_size: 20 });
+  if (currentFilters.nationality) params.set('nationality', currentFilters.nationality);
+  if (currentFilters.sex) params.set('sex', currentFilters.sex);
+  if (currentFilters.issuing_country) params.set('issuing_country', currentFilters.issuing_country);
+  if (currentFilters.charges) params.set('charges', currentFilters.charges);
+  if (currentFilters.name) params.set('name', currentFilters.name);
+  if (currentFilters.is_alarm) params.set('is_alarm', 'true');
+
+  try {
+    const resp = await fetch('/api/notices?' + params.toString());
+    if (!resp.ok) throw new Error('API error');
+    const data = await resp.json();
+
+    grid.innerHTML = '';
+    if (!data.notices || data.notices.length === 0) {
+      grid.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x1F50D;</div>No notices found matching your filters.</div>';
+      document.getElementById('pagination-container').innerHTML = '';
+      updateStats(0, data.total || 0);
+      return;
+    }
+
+    data.notices.forEach(notice => {
+      grid.appendChild(buildCard(notice));
+    });
+
+    renderPagination(data.total, data.page, data.page_size);
+    updateStats(data.notices.length, data.total);
+    totalNotices = data.total;
+  } catch (err) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x26A0;</div>Failed to load notices.</div>';
+    console.error(err);
+  }
+}
+
+/* ============================================================
+   Fetch Filters
+   ============================================================ */
+async function fetchFilters() {
+  try {
+    const resp = await fetch('/api/filters');
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    // Populate nationality dropdown
+    const natSelect = document.getElementById('filter-nationality');
+    natSelect.innerHTML = '<option value="">All Nationalities</option>';
+    (data.nationalities || []).forEach(code => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = countryFlag(code) + ' ' + code;
+      natSelect.appendChild(opt);
+    });
+
+    // Populate issuing country dropdown
+    const countrySelect = document.getElementById('filter-country');
+    countrySelect.innerHTML = '<option value="">All Countries</option>';
+    (data.issuing_countries || []).forEach(code => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = countryFlag(code) + ' ' + code;
+      countrySelect.appendChild(opt);
+    });
+
+    // Update total notices
+    updateStats(null, data.total_notices);
+  } catch (err) {
+    console.error('Failed to load filters', err);
+  }
+}
+
+/* ============================================================
+   Stats
+   ============================================================ */
+function updateStats(visible, total) {
+  if (visible !== null) document.getElementById('stat-visible').textContent = visible;
+  if (total !== undefined) document.getElementById('stat-total').textContent = total;
+}
+
+/* ============================================================
+   SSE Live Updates
+   ============================================================ */
+function initSSE() {
+  const evtSource = new EventSource('/api/stream');
+
+  evtSource.addEventListener('notice_update', (e) => {
+    try {
+      const notice = JSON.parse(e.data);
+      const cardId = 'card-' + notice.notice_id.replace(/\//g, '-');
+      const existing = document.getElementById(cardId);
+
+      if (existing) {
+        // LL-006: update in place, never replace img
+        updateCardInPlace(existing, notice);
+      } else {
+        // PSC-4: only prepend new card if on page 1 with no filters
+        const hasFilters = Object.values(currentFilters).some(v => v);
+        if (currentPage === 1 && !hasFilters) {
+          const grid = document.getElementById('card-grid');
+          const card = buildCard(notice);
+          if (grid.firstChild) {
+            grid.insertBefore(card, grid.firstChild);
+          } else {
+            grid.appendChild(card);
+          }
+          // Flash new card
+          card.classList.add('sse-flash');
+          setTimeout(() => card.classList.remove('sse-flash'), 1600);
+        }
+      }
+
+      // Increment total counter via SSE increment
+      const totalEl = document.getElementById('stat-total');
+      if (totalEl && !existing) {
+        totalEl.textContent = parseInt(totalEl.textContent, 10) + 1;
+      }
+    } catch (err) {
+      console.error('SSE parse error', err);
+    }
+  });
+
+  evtSource.onerror = () => {
+    console.warn('SSE connection lost — will retry automatically');
+  };
+}
+
+/* ============================================================
+   Utils
+   ============================================================ */
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function truncate(str, maxLen) {
+  if (!str) return '';
+  return str.length > maxLen ? str.substring(0, maxLen) + '...' : str;
+}
+
+/* ============================================================
+   Event Wiring
+   ============================================================ */
+document.getElementById('btn-apply').addEventListener('click', () => {
+  currentFilters = {
+    nationality: document.getElementById('filter-nationality').value,
+    sex: document.getElementById('filter-sex').value,
+    issuing_country: document.getElementById('filter-country').value,
+    charges: document.getElementById('filter-charges').value.trim(),
+    name: document.getElementById('filter-name').value.trim(),
+    is_alarm: document.getElementById('filter-alarms').checked,
+  };
+  currentPage = 1; // PSC-4: reset to page 1 on filter change
+  fetchNotices();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  document.getElementById('filter-name').value = '';
+  document.getElementById('filter-nationality').value = '';
+  document.getElementById('filter-sex').value = '';
+  document.getElementById('filter-country').value = '';
+  document.getElementById('filter-charges').value = '';
+  document.getElementById('filter-alarms').checked = false;
+  currentFilters = {};
+  currentPage = 1;
+  fetchNotices();
+});
+
+// Enter key on text inputs triggers apply
+['filter-name', 'filter-charges'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-apply').click();
+  });
+});
+
+/* ============================================================
+   Initialization
+   ============================================================ */
+async function init() {
+  await fetchFilters();
+  await fetchNotices();
+  initSSE();
+}
+
+init();
+</script>
+</body>
+</html>
